@@ -1,6 +1,8 @@
-import { Service } from '@n8n/di';
+import { Logger } from '@n8n/backend-common';
+import type { IExecutionResponse } from '@n8n/db';
+import { ExecutionRepository } from '@n8n/db';
+import { Container, Service } from '@n8n/di';
 import type express from 'express';
-import { Logger } from 'n8n-core';
 import {
 	FORM_NODE_TYPE,
 	type INodes,
@@ -10,20 +12,26 @@ import {
 	Workflow,
 } from 'n8n-workflow';
 
-import { ExecutionRepository } from '@/databases/repositories/execution.repository';
 import { ConflictError } from '@/errors/response-errors/conflict.error';
 import { NotFoundError } from '@/errors/response-errors/not-found.error';
-import type { IExecutionResponse, IWorkflowDb } from '@/interfaces';
 import { NodeTypes } from '@/node-types';
 import * as WebhookHelpers from '@/webhooks/webhook-helpers';
 import * as WorkflowExecuteAdditionalData from '@/workflow-execute-additional-data';
 
+import { sanitizeWebhookRequest } from './webhook-request-sanitizer';
 import { WebhookService } from './webhook.service';
 import type {
 	IWebhookResponseCallbackData,
 	IWebhookManager,
 	WaitingWebhookRequest,
 } from './webhook.types';
+import {
+	InstanceSettings,
+	WAITING_TOKEN_QUERY_PARAM,
+	prepareUrlForSigning,
+	generateUrlSignature,
+} from 'n8n-core';
+import crypto from 'crypto';
 
 /**
  * Service for handling the execution of webhooks of Wait nodes that use the
@@ -81,6 +89,30 @@ export class WaitingWebhooks implements IWebhookManager {
 		});
 	}
 
+	private getHmacSecret() {
+		return Container.get(InstanceSettings).hmacSignatureSecret;
+	}
+
+	private validateSignatureInRequest(req: express.Request, secret: string) {
+		try {
+			const actualToken = req.query[WAITING_TOKEN_QUERY_PARAM];
+
+			if (typeof actualToken !== 'string') return false;
+
+			const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
+			parsedUrl.searchParams.delete(WAITING_TOKEN_QUERY_PARAM);
+
+			const urlForSigning = prepareUrlForSigning(parsedUrl);
+
+			const expectedToken = generateUrlSignature(urlForSigning, secret);
+
+			const valid = crypto.timingSafeEqual(Buffer.from(actualToken), Buffer.from(expectedToken));
+			return valid;
+		} catch (error) {
+			return false;
+		}
+	}
+
 	async executeWebhook(
 		req: WaitingWebhookRequest,
 		res: express.Response,
@@ -89,10 +121,23 @@ export class WaitingWebhooks implements IWebhookManager {
 
 		this.logReceivedWebhook(req.method, executionId);
 
+		sanitizeWebhookRequest(req);
+
 		// Reset request parameters
 		req.params = {} as WaitingWebhookRequest['params'];
 
 		const execution = await this.getExecution(executionId);
+
+		if (execution && execution.data.validateSignature) {
+			const lastNodeExecuted = execution.data.resultData.lastNodeExecuted as string;
+			const lastNode = execution.workflowData.nodes.find((node) => node.name === lastNodeExecuted);
+			const shouldValidate = lastNode?.parameters.operation === SEND_AND_WAIT_OPERATION;
+
+			if (shouldValidate && !this.validateSignatureInRequest(req, this.getHmacSecret())) {
+				res.status(401).json({ error: 'Invalid token' });
+				return { noWebhookResponse: true };
+			}
+		}
 
 		if (!execution) {
 			throw new NotFoundError(`The execution "${executionId}" does not exist.`);
@@ -172,7 +217,7 @@ export class WaitingWebhooks implements IWebhookManager {
 					webhook.httpMethod === req.method &&
 					webhook.path === (suffix ?? '') &&
 					webhook.webhookDescription.restartWebhook === true &&
-					(webhook.webhookDescription.isForm || false) === this.includeForms,
+					(webhook.webhookDescription.nodeType === 'form' || false) === this.includeForms,
 			);
 
 		if (webhookData === undefined) {
@@ -207,13 +252,12 @@ export class WaitingWebhooks implements IWebhookManager {
 		const runExecutionData = execution.data;
 
 		return await new Promise((resolve, reject) => {
-			const executionMode = 'webhook';
 			void WebhookHelpers.executeWebhook(
 				workflow,
 				webhookData,
-				workflowData as IWorkflowDb,
+				workflowData,
 				workflowStartNode,
-				executionMode,
+				execution.mode,
 				runExecutionData.pushRef,
 				runExecutionData,
 				execution.id,

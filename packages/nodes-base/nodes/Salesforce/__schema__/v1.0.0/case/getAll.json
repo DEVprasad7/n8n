@@ -10,11 +10,10 @@
                 "url": {
                     "type": "string"
                 }
-            },
-            "required": [
-                "type",
-                "url"
-            ]
+            }
+        },
+        "CaseNumber": {
+            "type": "string"
         },
         "Id": {
             "type": "string"
@@ -23,7 +22,5 @@
             "type": "string"
         }
     },
-    "required": [
-        "attributes"
-    ]
+    "version": 2
 }

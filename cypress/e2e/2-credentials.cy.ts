@@ -1,5 +1,6 @@
 import { type ICredentialType } from 'n8n-workflow';
 
+import * as credentialsComposables from '../composables/credentialsComposables';
 import { getCredentialSaveButton, saveCredential } from '../composables/modals/credential-modal';
 import {
 	AGENT_NODE_NAME,
@@ -45,7 +46,7 @@ function deleteSelectedCredential() {
 
 describe('Credentials', () => {
 	beforeEach(() => {
-		cy.visit(credentialsPage.url);
+		credentialsComposables.loadCredentialsPage(credentialsPage.url);
 	});
 
 	it('should create a new credential using empty state', () => {
@@ -192,7 +193,6 @@ describe('Credentials', () => {
 		credentialsModal.actions.fillCredentialsForm();
 		workflowPage.getters.nodeCredentialsEditButton().click();
 		credentialsModal.getters.credentialsEditModal().should('be.visible');
-		credentialsModal.getters.name().click();
 		credentialsModal.actions.renameCredential(NEW_CREDENTIAL_NAME);
 		saveCredential();
 		credentialsModal.getters.closeButton().click();
@@ -210,7 +210,6 @@ describe('Credentials', () => {
 		cy.get('body').type('{enter}');
 		workflowPage.getters.nodeCredentialsEditButton().click();
 		credentialsModal.getters.credentialsEditModal().should('be.visible');
-		credentialsModal.getters.name().click();
 		credentialsModal.actions.renameCredential(NEW_CREDENTIAL_NAME2);
 		saveCredential();
 		credentialsModal.getters.closeButton().click();
@@ -235,7 +234,6 @@ describe('Credentials', () => {
 		credentialsModal.actions.fillCredentialsForm();
 		workflowPage.getters.nodeCredentialsEditButton().click();
 		credentialsModal.getters.credentialsEditModal().should('be.visible');
-		credentialsModal.getters.name().click();
 		credentialsModal.actions.renameCredential(NEW_CREDENTIAL_NAME);
 		saveCredential();
 		credentialsModal.getters.closeButton().click();

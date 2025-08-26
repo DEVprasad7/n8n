@@ -1,3 +1,4 @@
+import { lookup } from 'mime-types';
 import type {
 	IExecuteFunctions,
 	IDataObject,
@@ -5,11 +6,12 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 	IHttpRequestMethods,
+	INodeProperties,
 } from 'n8n-workflow';
 import {
 	BINARY_ENCODING,
 	SEND_AND_WAIT_OPERATION,
-	NodeConnectionType,
+	NodeConnectionTypes,
 	NodeOperationError,
 } from 'n8n-workflow';
 import type { Readable } from 'stream';
@@ -21,12 +23,25 @@ import {
 	getPropertyName,
 } from './GenericFunctions';
 import { appendAttributionOption } from '../../utils/descriptions';
+import { configureWaitTillDate } from '../../utils/sendAndWait/configureWaitTillDate.util';
 import { sendAndWaitWebhooksDescription } from '../../utils/sendAndWait/descriptions';
-import {
-	configureWaitTillDate,
-	getSendAndWaitProperties,
-	sendAndWaitWebhook,
-} from '../../utils/sendAndWait/utils';
+import { getSendAndWaitProperties, sendAndWaitWebhook } from '../../utils/sendAndWait/utils';
+
+const preBuiltAgentsCallout: INodeProperties = {
+	// eslint-disable-next-line n8n-nodes-base/node-param-display-name-miscased
+	displayName: 'Interact with Telegram using our pre-built',
+	name: 'preBuiltAgentsCalloutTelegram',
+	type: 'callout',
+	typeOptions: {
+		calloutAction: {
+			label: 'Voice assistant agent',
+			icon: 'bot',
+			type: 'openSampleWorkflowTemplate',
+			templateId: 'voice_assistant_agent_with_telegram_and_gcal',
+		},
+	},
+	default: '',
+};
 
 export class Telegram implements INodeType {
 	description: INodeTypeDescription = {
@@ -41,8 +56,8 @@ export class Telegram implements INodeType {
 			name: 'Telegram',
 		},
 		usableAsTool: true,
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		inputs: [NodeConnectionTypes.Main],
+		outputs: [NodeConnectionTypes.Main],
 		credentials: [
 			{
 				name: 'telegramApi',
@@ -51,6 +66,7 @@ export class Telegram implements INodeType {
 		],
 		webhooks: sendAndWaitWebhooksDescription,
 		properties: [
+			preBuiltAgentsCallout,
 			{
 				displayName: 'Resource',
 				name: 'resource',
@@ -230,7 +246,7 @@ export class Telegram implements INodeType {
 						name: 'Edit Message Text',
 						value: 'editMessageText',
 						description: 'Edit a text message',
-						action: 'Edit a test message',
+						action: 'Edit a text message',
 					},
 					{
 						name: 'Pin Chat Message',
@@ -351,7 +367,7 @@ export class Telegram implements INodeType {
 				},
 				required: true,
 				description:
-					'Unique identifier for the target chat or username of the target channel (in the format @channelusername)',
+					'Unique identifier for the target chat or username, To find your chat ID ask @get_id_bot',
 			},
 
 			// ----------------------------------
@@ -659,6 +675,31 @@ export class Telegram implements INodeType {
 				default: true,
 				description: 'Whether to download the file',
 			},
+			{
+				displayName: 'Additional Fields',
+				name: 'additionalFields',
+				type: 'collection',
+				placeholder: 'Add Field',
+				displayOptions: {
+					show: {
+						operation: ['get'],
+						resource: ['file'],
+						download: [true],
+					},
+				},
+				default: {},
+				options: [
+					{
+						displayName: 'MIME Type',
+						name: 'mimeType',
+						type: 'string',
+						placeholder: 'image/jpeg',
+						default: '',
+						description:
+							'The MIME type of the file. If not specified, the MIME type will be determined by the file extension.',
+					},
+				],
+			},
 
 			// ----------------------------------
 			//         message
@@ -706,7 +747,7 @@ export class Telegram implements INodeType {
 				},
 				required: true,
 				description:
-					'Unique identifier for the target chat or username of the target channel (in the format @channelusername). To find your chat ID ask @get_id_bot.',
+					'Unique identifier for the target chat or username, To find your chat ID ask @get_id_bot',
 			},
 			// ----------------------------------
 			//         message:sendAnimation/sendAudio/sendDocument/sendPhoto/sendSticker/sendVideo
@@ -2141,7 +2182,13 @@ export class Telegram implements INodeType {
 						},
 					};
 
-					responseData = await apiRequest.call(this, requestMethod, endpoint, {}, qs, { formData });
+					if (formData.reply_markup) {
+						formData.reply_markup = JSON.stringify(formData.reply_markup);
+					}
+
+					responseData = await apiRequest.call(this, requestMethod, endpoint, {}, qs, {
+						formData,
+					});
 				} else {
 					responseData = await apiRequest.call(this, requestMethod, endpoint, body, qs);
 				}
@@ -2166,11 +2213,15 @@ export class Telegram implements INodeType {
 							},
 						);
 
-						const fileName = filePath.split('/').pop();
+						const fileName = filePath.split('/').pop() as string;
+						const additionalFields = this.getNodeParameter('additionalFields', 0);
+						const providedMimeType = additionalFields?.mimeType as string | undefined;
+						const mimeType = providedMimeType ?? (lookup(fileName) || 'application/octet-stream');
 
 						const data = await this.helpers.prepareBinaryData(
 							file.body as Buffer,
-							fileName as string,
+							fileName,
+							mimeType,
 						);
 
 						returnData.push({
@@ -2196,7 +2247,11 @@ export class Telegram implements INodeType {
 				returnData.push(...executionData);
 			} catch (error) {
 				if (this.continueOnFail()) {
-					returnData.push({ json: {}, error: error.message });
+					const executionErrorData = this.helpers.constructExecutionMetaData(
+						this.helpers.returnJsonArray({ error: error.description ?? error.message }),
+						{ itemData: { item: i } },
+					);
+					returnData.push(...executionErrorData);
 					continue;
 				}
 				throw error;

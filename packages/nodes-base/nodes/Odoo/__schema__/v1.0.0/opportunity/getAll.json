@@ -1,17 +1,15 @@
 {
     "type": "object",
     "properties": {
+        "active": {
+            "type": "boolean"
+        },
         "id": {
             "type": "integer"
         },
         "name": {
             "type": "string"
-        },
-        "expected_revenue": {
-            "type": "integer"
         }
     },
-    "required": [
-        "id"
-    ]
+    "version": 6
 }

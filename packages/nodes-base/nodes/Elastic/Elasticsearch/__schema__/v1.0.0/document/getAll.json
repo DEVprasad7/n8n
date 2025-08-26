@@ -3,9 +3,10 @@
     "properties": {
         "_id": {
             "type": "string"
+        },
+        "timestamp": {
+            "type": "string"
         }
     },
-    "required": [
-        "_id"
-    ]
+    "version": 2
 }

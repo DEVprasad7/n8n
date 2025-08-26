@@ -1,19 +1,17 @@
+import type { Logger } from '@n8n/backend-common';
+import { InstanceSettingsConfig } from '@n8n/config';
 import { mock } from 'jest-mock-extended';
 jest.mock('node:fs', () => mock<typeof fs>());
 import * as fs from 'node:fs';
 
-import { InstanceSettings } from '@/instance-settings';
-import { InstanceSettingsConfig } from '@/instance-settings/instance-settings-config';
-import { Logger } from '@/logging/logger';
-import { mockInstance } from '@test/utils';
+import { InstanceSettings } from '../instance-settings';
+import { WorkerMissingEncryptionKey } from '../worker-missing-encryption-key.error';
 
 describe('InstanceSettings', () => {
 	const userFolder = '/test';
-	process.env.N8N_USER_FOLDER = userFolder;
-	const settingsFile = `${userFolder}/.n8n/config`;
 
 	const mockFs = mock(fs);
-	const logger = mockInstance(Logger);
+	const logger = mock<Logger>();
 
 	const createInstanceSettings = (opts?: Partial<InstanceSettingsConfig>) =>
 		new InstanceSettings(
@@ -27,6 +25,9 @@ describe('InstanceSettings', () => {
 	beforeEach(() => {
 		jest.resetAllMocks();
 		mockFs.statSync.mockReturnValue({ mode: 0o600 } as fs.Stats);
+
+		process.argv[2] = 'main';
+		process.env = { N8N_USER_FOLDER: userFolder };
 	});
 
 	describe('If the settings file exists', () => {
@@ -184,6 +185,11 @@ describe('InstanceSettings', () => {
 				},
 			);
 		});
+
+		it("should throw on a worker process, if encryption key isn't set via env", () => {
+			process.argv[2] = 'worker';
+			expect(() => createInstanceSettings()).toThrowError(WorkerMissingEncryptionKey);
+		});
 	});
 
 	describe('constructor', () => {
@@ -195,25 +201,16 @@ describe('InstanceSettings', () => {
 
 			const settings = createInstanceSettings();
 
-			const [instanceType, nanoid] = settings.hostId.split('-');
+			const [instanceType, hostId] = settings.hostId.split('-');
 			expect(instanceType).toEqual('main');
-			expect(nanoid).toHaveLength(16); // e.g. sDX6ZPc0bozv66zM
+			expect(hostId.length).toBeGreaterThan(0); // hostname or nanoID
 		});
 	});
 
 	describe('isDocker', () => {
-		let settings: InstanceSettings;
-
-		beforeEach(() => {
-			mockFs.existsSync.calledWith(settingsFile).mockReturnValue(true);
-			mockFs.readFileSync
-				.calledWith(settingsFile)
-				.mockReturnValue(JSON.stringify({ encryptionKey: 'test_key' }));
-			settings = createInstanceSettings();
-		});
-
 		it('should return true if /.dockerenv exists', () => {
 			mockFs.existsSync.mockImplementation((path) => path === '/.dockerenv');
+			const settings = createInstanceSettings();
 			expect(settings.isDocker).toBe(true);
 			expect(mockFs.existsSync).toHaveBeenCalledWith('/.dockerenv');
 			expect(mockFs.readFileSync).not.toHaveBeenCalledWith('/proc/self/cgroup', 'utf8');
@@ -221,6 +218,7 @@ describe('InstanceSettings', () => {
 
 		it('should return true if /run/.containerenv exists', () => {
 			mockFs.existsSync.mockImplementation((path) => path === '/run/.containerenv');
+			const settings = createInstanceSettings();
 			expect(settings.isDocker).toBe(true);
 			expect(mockFs.existsSync).toHaveBeenCalledWith('/run/.containerenv');
 			expect(mockFs.readFileSync).not.toHaveBeenCalledWith('/proc/self/cgroup', 'utf8');
@@ -232,6 +230,7 @@ describe('InstanceSettings', () => {
 				mockFs.existsSync.mockReturnValueOnce(false);
 				mockFs.readFileSync.calledWith('/proc/self/cgroup', 'utf8').mockReturnValueOnce(str);
 
+				const settings = createInstanceSettings();
 				expect(settings.isDocker).toBe(true);
 				expect(mockFs.existsSync).toHaveBeenCalledWith('/.dockerenv');
 				expect(mockFs.readFileSync).toHaveBeenCalledWith('/proc/self/cgroup', 'utf8');
@@ -245,6 +244,7 @@ describe('InstanceSettings', () => {
 				mockFs.readFileSync.calledWith('/proc/self/cgroup', 'utf8').mockReturnValueOnce('');
 				mockFs.readFileSync.calledWith('/proc/self/mountinfo', 'utf8').mockReturnValueOnce(str);
 
+				const settings = createInstanceSettings();
 				expect(settings.isDocker).toBe(true);
 				expect(mockFs.existsSync).toHaveBeenCalledWith('/.dockerenv');
 				expect(mockFs.readFileSync).toHaveBeenCalledWith('/proc/self/cgroup', 'utf8');
@@ -256,6 +256,7 @@ describe('InstanceSettings', () => {
 			mockFs.existsSync.calledWith('/.dockerenv').mockReturnValueOnce(false);
 			mockFs.readFileSync.calledWith('/proc/self/cgroup', 'utf8').mockReturnValueOnce('');
 			mockFs.readFileSync.calledWith('/proc/self/mountinfo', 'utf8').mockReturnValueOnce('');
+			const settings = createInstanceSettings();
 			expect(settings.isDocker).toBe(false);
 		});
 
@@ -265,12 +266,14 @@ describe('InstanceSettings', () => {
 				throw new Error('File not found');
 			});
 
+			const settings = createInstanceSettings();
 			expect(settings.isDocker).toBe(false);
 		});
 
 		it('should cache the result of isDocker check', () => {
 			mockFs.existsSync.calledWith('/.dockerenv').mockReturnValueOnce(true);
 
+			const settings = createInstanceSettings();
 			expect(settings.isDocker).toBe(true);
 
 			mockFs.existsSync.mockClear();

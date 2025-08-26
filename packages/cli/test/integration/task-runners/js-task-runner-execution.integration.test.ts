@@ -12,7 +12,7 @@ import type {
 	IWorkflowExecuteAdditionalData,
 	WorkflowExecuteMode,
 } from 'n8n-workflow';
-import { createEnvProviderState, NodeConnectionType, Workflow } from 'n8n-workflow';
+import { createEnvProviderState, NodeConnectionTypes, Workflow } from 'n8n-workflow';
 
 import { LocalTaskRequester } from '@/task-runners/task-managers/local-task-requester';
 import { TaskRunnerModule } from '@/task-runners/task-runner-module';
@@ -78,7 +78,7 @@ describe('JS TaskRunner execution on internal mode', () => {
 						[
 							{
 								node: 'Code',
-								type: NodeConnectionType.Main,
+								type: NodeConnectionTypes.Main,
 								index: 0,
 							},
 						],
@@ -108,6 +108,7 @@ describe('JS TaskRunner execution on internal mode', () => {
 					ManualTrigger: [
 						{
 							startTime: Date.now(),
+							executionIndex: 0,
 							executionTime: 0,
 							executionStatus: 'success',
 							source: [],
@@ -233,7 +234,7 @@ describe('JS TaskRunner execution on internal mode', () => {
 			expect(result).toEqual({
 				ok: false,
 				error: expect.objectContaining({
-					message: "Cannot find module 'fs' [line 2]",
+					message: "Module 'fs' is disallowed [line 2]",
 				}),
 			});
 		});
@@ -261,7 +262,7 @@ describe('JS TaskRunner execution on internal mode', () => {
 			expect(result).toEqual({
 				ok: false,
 				error: expect.objectContaining({
-					message: "Cannot find module 'lodash' [line 2]",
+					message: "Module 'lodash' is disallowed [line 2]",
 				}),
 			});
 		});

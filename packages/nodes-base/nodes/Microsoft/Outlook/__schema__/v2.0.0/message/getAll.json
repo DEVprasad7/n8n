@@ -1,12 +1,6 @@
 {
     "type": "object",
     "properties": {
-        "id": {
-            "type": "string"
-        },
-        "conversationId": {
-            "type": "string"
-        },
         "bodyPreview": {
             "type": "string"
         },
@@ -16,29 +10,15 @@
                 "type": "string"
             }
         },
+        "conversationId": {
+            "type": "string"
+        },
         "hasAttachments": {
             "type": "boolean"
         },
-        "@odata.etag": {
+        "id": {
             "type": "string"
-        },
-        "body": {
-            "type": "object",
-            "properties": {
-                "contentType": {
-                    "type": "string"
-                },
-                "content": {
-                    "type": "string"
-                }
-            },
-            "required": [
-                "contentType",
-                "content"
-            ]
         }
     },
-    "required": [
-        "id"
-    ]
+    "version": 6
 }

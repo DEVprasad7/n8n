@@ -2,21 +2,23 @@ import type {
 	IDataObject,
 	IExecuteFunctions,
 	INodeExecutionData,
+	INodeProperties,
 	INodeType,
 	INodeTypeBaseDescription,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { NodeConnectionType, NodeOperationError, SEND_AND_WAIT_OPERATION } from 'n8n-workflow';
+import { NodeConnectionTypes, NodeOperationError, SEND_AND_WAIT_OPERATION } from 'n8n-workflow';
 
 import { draftFields, draftOperations } from './DraftDescription';
 import { labelFields, labelOperations } from './LabelDescription';
 import { getGmailAliases, getLabels, getThreadMessages } from './loadOptions';
 import { messageFields, messageOperations } from './MessageDescription';
 import { threadFields, threadOperations } from './ThreadDescription';
+import { addThreadHeadersToEmail } from './utils/draft';
+import { configureWaitTillDate } from '../../../../utils/sendAndWait/configureWaitTillDate.util';
 import { sendAndWaitWebhooksDescription } from '../../../../utils/sendAndWait/descriptions';
 import type { IEmail } from '../../../../utils/sendAndWait/interfaces';
 import {
-	configureWaitTillDate,
 	createEmail,
 	getSendAndWaitProperties,
 	sendAndWaitWebhook,
@@ -35,6 +37,22 @@ import {
 	unescapeSnippets,
 } from '../GenericFunctions';
 
+const preBuiltAgentsCallout: INodeProperties = {
+	// eslint-disable-next-line n8n-nodes-base/node-param-display-name-miscased
+	displayName: 'Sort your Gmail inbox using our pre-built',
+	name: 'preBuiltAgentsCalloutGmail',
+	type: 'callout',
+	typeOptions: {
+		calloutAction: {
+			label: 'Email triage agent',
+			icon: 'bot',
+			type: 'openSampleWorkflowTemplate',
+			templateId: 'email_triage_agent_with_gmail',
+		},
+	},
+	default: '',
+};
+
 const versionDescription: INodeTypeDescription = {
 	displayName: 'Gmail',
 	name: 'gmail',
@@ -46,8 +64,8 @@ const versionDescription: INodeTypeDescription = {
 	defaults: {
 		name: 'Gmail',
 	},
-	inputs: [NodeConnectionType.Main],
-	outputs: [NodeConnectionType.Main],
+	inputs: [NodeConnectionTypes.Main],
+	outputs: [NodeConnectionTypes.Main],
 	usableAsTool: true,
 	credentials: [
 		{
@@ -71,6 +89,7 @@ const versionDescription: INodeTypeDescription = {
 	],
 	webhooks: sendAndWaitWebhooksDescription,
 	properties: [
+		preBuiltAgentsCallout,
 		{
 			displayName: 'Authentication',
 			name: 'authentication',
@@ -559,6 +578,12 @@ export class GmailV2 implements INodeType {
 							...prepareEmailBody.call(this, i),
 							attachments,
 						};
+
+						if (threadId) {
+							// If a threadId is set, we need to add the Message-ID of the last message in the thread
+							// to the email so that Gmail can correctly associate the draft with the thread
+							await addThreadHeadersToEmail.call(this, email, threadId as string);
+						}
 
 						const body = {
 							message: {
