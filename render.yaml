@@ -13,7 +13,5 @@ services:
         value: 'yourpassword'
       - key: N8N_HOST
         value: 'n8n.onrender.com'
-      - key: N8N_PORT
-        value: '10000'
       - key: N8N_PROTOCOL
         value: 'https'
